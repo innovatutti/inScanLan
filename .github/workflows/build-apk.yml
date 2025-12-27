@@ -17,65 +17,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-    
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-    
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-      with:
-        cmdline-tools-version: 9477386
-        packages: 'platform-tools platforms;android-33 build-tools;33.0.0 ndk;25.2.9519653'
-        accept-android-sdk-licenses: true
-    
-    - name: Verify Android SDK
+    - name: Build APK with Buildozer in Docker
       run: |
-        echo "ANDROID_HOME: $ANDROID_HOME"
-        echo "Checking aidl..."
-        find $ANDROID_HOME -name aidl -type f 2>/dev/null || echo "aidl not in find results"
-        ls -la $ANDROID_HOME/build-tools/*/aidl 2>/dev/null || echo "No aidl found"
-        
-        # Add build-tools to PATH
-        echo "$ANDROID_HOME/build-tools/33.0.0" >> $GITHUB_PATH
-    
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          git zip unzip openjdk-17-jdk wget \
-          autoconf libtool pkg-config \
-          zlib1g-dev libncurses5-dev libncursesw5-dev \
-          cmake libffi-dev libssl-dev \
-          build-essential ccache \
-          libltdl-dev libffi-dev libssl-dev python3-dev
-    
-    - name: Install Buildozer and dependencies
-      run: |
-        pip install --upgrade pip setuptools wheel
-        pip install buildozer cython==0.29.33
-        pip install --upgrade certifi
-    
-    - name: Build APK with Buildozer
-      run: |
-        echo "Environment variables:"
-        echo "ANDROID_HOME=$ANDROID_HOME"
-        echo "PATH=$PATH"
-        
-        echo "Checking requirements..."
-        which git
-        which aidl || echo "aidl not in PATH, checking ANDROID_HOME..."
-        
-        # Assicura che build-tools sia nel PATH
-        export PATH=$PATH:$ANDROID_HOME/build-tools/33.0.0
-        
-        buildozer -v android debug
+        docker run --rm \
+          -v ${{ github.workspace }}:/app \
+          -w /app \
+          kivy/buildozer:latest \
+          buildozer android debug
     
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
