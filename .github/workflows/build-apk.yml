@@ -65,11 +65,19 @@ jobs:
     
     - name: Build APK with Buildozer
       run: |
+        export ANDROID_HOME=$HOME/android-sdk
+        export ANDROID_SDK_ROOT=$HOME/android-sdk
+        export PATH=$PATH:$HOME/android-sdk/cmdline-tools/latest/bin:$HOME/android-sdk/platform-tools:$HOME/android-sdk/build-tools/33.0.0
+        
+        echo "Checking git..."
+        which git
+        git --version
+        
+        echo "Checking ANDROID_HOME..."
+        echo $ANDROID_HOME
+        ls -la $ANDROID_HOME/build-tools/33.0.0/ | grep aidl || echo "aidl not found"
+        
         buildozer -v android debug
-      env:
-        ANDROID_HOME: ${{ env.ANDROID_HOME }}
-        ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
-        PATH: ${{ env.PATH }}
     
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
