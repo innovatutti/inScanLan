@@ -1,11 +1,13 @@
 name: Build Android APK
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:  # Permette di avviare manualmente
+  # Disabilitato auto-trigger per problemi di rete su GitHub Actions
+  # Usa solo workflow_dispatch per build manuali
+  # push:
+  #   branches: [ main, master ]
+  # pull_request:
+  #   branches: [ main, master ]
+  workflow_dispatch:  # Avvio manuale quando necessario
 
 jobs:
   build:
