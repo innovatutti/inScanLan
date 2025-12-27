@@ -29,24 +29,21 @@ jobs:
         java-version: '17'
     
     - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        cmdline-tools-version: 9477386
+        packages: 'platform-tools platforms;android-33 build-tools;33.0.0 ndk;25.2.9519653'
+        accept-android-sdk-licenses: true
+    
+    - name: Verify Android SDK
       run: |
-        mkdir -p $HOME/android-sdk/cmdline-tools
-        wget -q -O /tmp/cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-        unzip -q /tmp/cmdline-tools.zip -d $HOME/android-sdk/cmdline-tools
-        mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
+        echo "ANDROID_HOME: $ANDROID_HOME"
+        echo "Checking aidl..."
+        find $ANDROID_HOME -name aidl -type f 2>/dev/null || echo "aidl not in find results"
+        ls -la $ANDROID_HOME/build-tools/*/aidl 2>/dev/null || echo "No aidl found"
         
-        export ANDROID_HOME=$HOME/android-sdk
-        export ANDROID_SDK_ROOT=$HOME/android-sdk
-        export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/build-tools/33.0.0
-        
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0" "ndk;25.2.9519653"
-        
-        echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-        echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
-        echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
-        echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
-        echo "$HOME/android-sdk/build-tools/33.0.0" >> $GITHUB_PATH
+        # Add build-tools to PATH
+        echo "$ANDROID_HOME/build-tools/33.0.0" >> $GITHUB_PATH
     
     - name: Install dependencies
       run: |
@@ -67,17 +64,16 @@ jobs:
     
     - name: Build APK with Buildozer
       run: |
-        export ANDROID_HOME=$HOME/android-sdk
-        export ANDROID_SDK_ROOT=$HOME/android-sdk
-        export PATH=$PATH:$HOME/android-sdk/cmdline-tools/latest/bin:$HOME/android-sdk/platform-tools:$HOME/android-sdk/build-tools/33.0.0
+        echo "Environment variables:"
+        echo "ANDROID_HOME=$ANDROID_HOME"
+        echo "PATH=$PATH"
         
-        echo "Checking git..."
+        echo "Checking requirements..."
         which git
-        git --version
+        which aidl || echo "aidl not in PATH, checking ANDROID_HOME..."
         
-        echo "Checking ANDROID_HOME..."
-        echo $ANDROID_HOME
-        ls -la $ANDROID_HOME/build-tools/33.0.0/ | grep aidl || echo "aidl not found"
+        # Assicura che build-tools sia nel PATH
+        export PATH=$PATH:$ANDROID_HOME/build-tools/33.0.0
         
         buildozer -v android debug
     
