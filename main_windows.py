@@ -14,6 +14,7 @@ import re
 import json
 import webbrowser
 import socket
+import sqlite3
 from datetime import datetime
 from network_scanner import NetworkScanner
 
@@ -173,6 +174,18 @@ class InScanLanApp:
                                      command=self.open_wifi_scanner, bg="#9900cc", fg="white",
                                      font=('Segoe UI', 10, 'bold'), padx=15)
         self.wifi_button.grid(row=0, column=9, padx=5)
+        
+        # Pulsante Salva Scansione con Nome
+        self.save_scan_button = tk.Button(options_frame, text="💾 Salva", 
+                                         command=self.save_scan_with_name, bg="#006699", fg="white",
+                                         font=('Segoe UI', 10, 'bold'), padx=15)
+        self.save_scan_button.grid(row=0, column=10, padx=5)
+        
+        # Pulsante Carica Scansioni
+        self.load_scan_button = tk.Button(options_frame, text="📂 Carica", 
+                                          command=self.load_saved_scans, bg="#669900", fg="white",
+                                          font=('Segoe UI', 10, 'bold'), padx=15)
+        self.load_scan_button.grid(row=0, column=11, padx=5)
         
         # Notebook per tabs
         notebook = ttk.Notebook(main_frame)
@@ -551,6 +564,213 @@ class InScanLanApp:
                      bg="#00aa00", fg="white", font=('Segoe UI', 11, 'bold'), padx=20).pack(side=tk.LEFT, padx=5)
             tk.Button(btn_frame, text="Annulla", command=select_win.destroy,
                      bg="#aa0000", fg="white", font=('Segoe UI', 11, 'bold'), padx=20).pack(side=tk.LEFT, padx=5)
+        
+        except Exception as e:
+            messagebox.showerror("Errore", f"Impossibile caricare scansioni:\n{str(e)}")
+    
+    def save_scan_with_name(self):
+        """Salva la scansione corrente con un nome personalizzato"""
+        if not self.tree.get_children():
+            messagebox.showwarning("Attenzione", "Nessuna scansione da salvare")
+            return
+        
+        # Finestra per inserire il nome
+        save_win = tk.Toplevel(self.root)
+        save_win.title("Salva Scansione")
+        save_win.geometry("500x250")
+        save_win.configure(bg="#2b2b2b")
+        
+        tk.Label(save_win, text="💾 Salva Scansione", font=('Segoe UI', 16, 'bold'),
+                bg="#2b2b2b", fg="#00ff00").pack(pady=20)
+        
+        tk.Label(save_win, text="Nome scansione:", bg="#2b2b2b", fg="white",
+                font=('Segoe UI', 11)).pack(pady=5)
+        
+        # Nome predefinito con data/ora
+        default_name = f"Scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        name_entry = ttk.Entry(save_win, width=40, font=('Segoe UI', 11))
+        name_entry.insert(0, default_name)
+        name_entry.pack(pady=10)
+        name_entry.focus()
+        
+        def do_save():
+            scan_name = name_entry.get().strip()
+            if not scan_name:
+                messagebox.showwarning("Attenzione", "Inserisci un nome per la scansione")
+                return
+            
+            try:
+                # Raccogli dati dispositivi
+                devices = []
+                for item in self.tree.get_children():
+                    values = self.tree.item(item)['values']
+                    devices.append({
+                        'ip': values[0],
+                        'hostname': values[1],
+                        'netbios': values[2],
+                        'mac': values[3],
+                        'vendor': values[4],
+                        'ports': values[5],
+                        'status': values[6]
+                    })
+                
+                scan_data = json.dumps(devices)
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                subnet = self.ip_entry.get()
+                
+                # Modifica tabella per includere nome scansione
+                self.cursor.execute('''
+                    INSERT INTO scans (timestamp, subnet, devices_count, scan_data, scan_name)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (timestamp, subnet, len(devices), scan_data, scan_name))
+                
+                self.conn.commit()
+                self.log(f"Scansione '{scan_name}' salvata: {len(devices)} dispositivi", "SUCCESS")
+                messagebox.showinfo("Salvato", f"Scansione '{scan_name}' salvata!\n{len(devices)} dispositivi")
+                save_win.destroy()
+            except sqlite3.IntegrityError:
+                # Se la colonna scan_name non esiste ancora, aggiungila
+                try:
+                    self.cursor.execute('ALTER TABLE scans ADD COLUMN scan_name TEXT')
+                    self.conn.commit()
+                    # Riprova il salvataggio
+                    do_save()
+                except Exception as e:
+                    messagebox.showerror("Errore", f"Errore salvataggio:\n{str(e)}")
+            except Exception as e:
+                messagebox.showerror("Errore", f"Errore salvataggio:\n{str(e)}")
+        
+        btn_frame = tk.Frame(save_win, bg="#2b2b2b")
+        btn_frame.pack(pady=20)
+        
+        tk.Button(btn_frame, text="✅ Salva", command=do_save,
+                 bg="#00aa00", fg="white", font=('Segoe UI', 11, 'bold'), padx=30).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="❌ Annulla", command=save_win.destroy,
+                 bg="#aa0000", fg="white", font=('Segoe UI', 11, 'bold'), padx=30).pack(side=tk.LEFT, padx=5)
+        
+        # Enter per salvare
+        name_entry.bind('<Return>', lambda e: do_save())
+    
+    def load_saved_scans(self):
+        """Finestra per caricare scansioni salvate con nome"""
+        try:
+            # Aggiungi colonna scan_name se non esiste
+            try:
+                self.cursor.execute('ALTER TABLE scans ADD COLUMN scan_name TEXT')
+                self.conn.commit()
+            except:
+                pass  # Colonna già esistente
+            
+            # Finestra selezione scansione
+            select_win = tk.Toplevel(self.root)
+            select_win.title("Carica Scansione Salvata")
+            select_win.geometry("900x500")
+            select_win.configure(bg="#2b2b2b")
+            
+            tk.Label(select_win, text="📂 Scansioni Salvate", font=('Segoe UI', 16, 'bold'),
+                    bg="#2b2b2b", fg="#00ff00").pack(pady=10)
+            
+            # Treeview per scansioni
+            cols = ('ID', 'Nome', 'Data/Ora', 'Subnet', 'Dispositivi')
+            scan_tree = ttk.Treeview(select_win, columns=cols, show='headings', height=18)
+            
+            for col in cols:
+                scan_tree.heading(col, text=col)
+            
+            scan_tree.column('ID', width=50)
+            scan_tree.column('Nome', width=250)
+            scan_tree.column('Data/Ora', width=180)
+            scan_tree.column('Subnet', width=180)
+            scan_tree.column('Dispositivi', width=100)
+            
+            scrollbar = ttk.Scrollbar(select_win, orient=tk.VERTICAL, command=scan_tree.yview)
+            scan_tree.configure(yscroll=scrollbar.set)
+            
+            # Carica scansioni dal DB
+            self.cursor.execute('SELECT id, scan_name, timestamp, subnet, devices_count FROM scans ORDER BY id DESC')
+            scans = self.cursor.fetchall()
+            
+            for scan in scans:
+                scan_id, scan_name, timestamp, subnet, count = scan
+                display_name = scan_name if scan_name else "(senza nome)"
+                scan_tree.insert('', tk.END, values=(scan_id, display_name, timestamp, subnet, count))
+            
+            scan_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0), pady=10)
+            scrollbar.pack(side=tk.LEFT, fill=tk.Y, pady=10)
+            
+            def load_selected():
+                selection = scan_tree.selection()
+                if not selection:
+                    messagebox.showwarning("Attenzione", "Seleziona una scansione")
+                    return
+                
+                scan_id = scan_tree.item(selection[0])['values'][0]
+                scan_name = scan_tree.item(selection[0])['values'][1]
+                
+                self.cursor.execute('SELECT scan_data, subnet FROM scans WHERE id = ?', (scan_id,))
+                result = self.cursor.fetchone()
+                
+                if result:
+                    devices = json.loads(result[0])
+                    subnet = result[1]
+                    
+                    # Pulisci treeview
+                    for item in self.tree.get_children():
+                        self.tree.delete(item)
+                    
+                    # Aggiorna subnet nel campo
+                    self.ip_entry.delete(0, tk.END)
+                    self.ip_entry.insert(0, subnet)
+                    
+                    # Carica dispositivi
+                    for device in devices:
+                        self.tree.insert('', tk.END, values=(
+                            device['ip'],
+                            device['hostname'],
+                            device['netbios'],
+                            device['mac'],
+                            device['vendor'],
+                            device['ports'],
+                            device['status']
+                        ))
+                    
+                    self.log(f"Scansione '{scan_name}' caricata: {len(devices)} dispositivi", "SUCCESS")
+                    messagebox.showinfo("Caricato", f"Scansione '{scan_name}' caricata\n{len(devices)} dispositivi")
+                    select_win.destroy()
+            
+            def delete_selected():
+                selection = scan_tree.selection()
+                if not selection:
+                    messagebox.showwarning("Attenzione", "Seleziona una scansione da eliminare")
+                    return
+                
+                scan_id = scan_tree.item(selection[0])['values'][0]
+                scan_name = scan_tree.item(selection[0])['values'][1]
+                
+                if messagebox.askyesno("Conferma", f"Eliminare la scansione '{scan_name}'?"):
+                    self.cursor.execute('DELETE FROM scans WHERE id = ?', (scan_id,))
+                    self.conn.commit()
+                    scan_tree.delete(selection[0])
+                    self.log(f"Scansione '{scan_name}' eliminata", "INFO")
+            
+            btn_frame = tk.Frame(select_win, bg="#2b2b2b")
+            btn_frame.pack(pady=10)
+            
+            tk.Button(btn_frame, text="✅ Carica", command=load_selected,
+                     bg="#00aa00", fg="white", font=('Segoe UI', 11, 'bold'), padx=20).pack(side=tk.LEFT, padx=5)
+            tk.Button(btn_frame, text="🗑️ Elimina", command=delete_selected,
+                     bg="#cc6600", fg="white", font=('Segoe UI', 11, 'bold'), padx=20).pack(side=tk.LEFT, padx=5)
+            tk.Button(btn_frame, text="❌ Chiudi", command=select_win.destroy,
+                     bg="#aa0000", fg="white", font=('Segoe UI', 11, 'bold'), padx=20).pack(side=tk.LEFT, padx=5)
+        
+        except Exception as e:
+            messagebox.showerror("Errore", f"Impossibile caricare scansioni:\n{str(e)}")
+            btn_frame.pack(pady=10)
+            
+            tk.Button(btn_frame, text="Carica", command=load_selected,
+                     bg="#00aa00", fg="white", font=('Segoe UI', 11, 'bold'), padx=20).pack(side=tk.LEFT, padx=5)
+            tk.Button(btn_frame, text="Annulla", command=select_win.destroy,
+                     bg="#aa0000", fg="white", font=('Segoe UI', 11, 'bold'), padx=20).pack(side=tk.LEFT, padx=5)
             
         except Exception as e:
             messagebox.showerror("Errore", f"Impossibile caricare scansioni:\n{str(e)}")
@@ -786,7 +1006,7 @@ class InScanLanApp:
                 wifi_win.geometry("700x400")
                 wifi_win.configure(bg="#2b2b2b")
                 
-                tk.Label(wifi_win, text="🔐 Password WiFi Trovate", font=('Segoe UI', 16, 'bold'),
+                tk.Label(wifi_win, text=f"🔐 Password WiFi Trovate ({len(wifi_data)})", font=('Segoe UI', 16, 'bold'),
                         bg="#2b2b2b", fg="#00ff00").pack(pady=10)
                 
                 cols = ('SSID', 'Password', 'Sicurezza')
@@ -795,14 +1015,44 @@ class InScanLanApp:
                 for col in cols:
                     wifi_tree.heading(col, text=col)
                 
+                wifi_tree.column('SSID', width=250)
+                wifi_tree.column('Password', width=250)
+                wifi_tree.column('Sicurezza', width=180)
+                
                 for ssid, pwd, sec in wifi_data:
                     wifi_tree.insert('', tk.END, values=(ssid, pwd, sec))
                 
-                wifi_tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+                scrollbar = ttk.Scrollbar(wifi_win, orient=tk.VERTICAL, command=wifi_tree.yview)
+                wifi_tree.configure(yscroll=scrollbar.set)
+                wifi_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0), pady=10)
+                scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=10, padx=(0, 10))
+                
+                # Pulsante Esporta
+                btn_frame = tk.Frame(wifi_win, bg="#2b2b2b")
+                btn_frame.pack(pady=10)
+                
+                def export_to_txt():
+                    try:
+                        filename = f"WiFi_Passwords_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                        with open(filename, 'w', encoding='utf-8') as f:
+                            f.write("Password WiFi Estratte\n")
+                            f.write("=" * 60 + "\n\n")
+                            for ssid, pwd, sec in wifi_data:
+                                f.write(f"SSID: {ssid}\n")
+                                f.write(f"Password: {pwd}\n")
+                                f.write(f"Sicurezza: {sec}\n")
+                                f.write("-" * 60 + "\n")
+                        messagebox.showinfo("Salvato", f"Esportato in: {filename}")
+                    except Exception as e:
+                        messagebox.showerror("Errore", f"Errore esportazione: {str(e)}")
+                
+                tk.Button(btn_frame, text="📄 Esporta TXT", command=export_to_txt,
+                         bg="#0066cc", fg="white", font=('Segoe UI', 10, 'bold'), padx=20).pack(side=tk.LEFT, padx=5)
                 
                 self.log(f"Estratte {len(wifi_data)} password WiFi", "SUCCESS")
+                messagebox.showinfo("Successo", f"Trovate {len(wifi_data)} password WiFi!\nSalvate nel database.")
             else:
-                messagebox.showinfo("Info", "Nessuna password WiFi trovata")
+                messagebox.showinfo("Info", f"Nessuna password WiFi trovata.\n\nProfili trovati: {len(profiles)}\n\nAssicurati di:\n- Essere connesso con WiFi\n- Avere profili salvati in Windows\n- Eseguire come amministratore se necessario")
                 
         except Exception as e:
             messagebox.showerror("Errore", f"Impossibile estrarre password WiFi:\n{str(e)}")
@@ -1899,6 +2149,12 @@ class InScanLanApp:
         band_filter.set("Tutte")
         band_filter.pack(side=tk.LEFT, padx=5)
         band_filter.bind('<<ComboboxSelected>>', lambda e: scan_wifi_networks())
+        
+        # Pulsante Estrai Password WiFi
+        extract_pwd_btn = tk.Button(toolbar, text="🔑 Estrai Password WiFi Salvate",
+                                   command=self.extract_wifi_passwords,
+                                   bg="#cc6600", fg="white", font=('Segoe UI', 11, 'bold'), padx=20)
+        extract_pwd_btn.pack(side=tk.LEFT, padx=20)
         
         auto_refresh_var = tk.BooleanVar(value=False)
         
