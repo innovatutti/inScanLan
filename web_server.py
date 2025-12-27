@@ -30,6 +30,18 @@ def scan_network():
     
     return jsonify({'devices': results})
 
+@app.route('/api/scan/physical', methods=['POST'])
+def scan_physical_devices():
+    """
+    Scansione Layer 2 - Rileva TUTTI i dispositivi fisici
+    anche su subnet diverse o con IP errati
+    """
+    results = scanner.scan_all_physical_devices(
+        lambda msg, level: print(f"[{level}] {msg}")
+    )
+    
+    return jsonify({'devices': results})
+
 @app.route('/api/wifi/scan')
 def wifi_scan():
     # Su Android usa termux-wifi-scaninfo

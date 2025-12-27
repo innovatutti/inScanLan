@@ -77,6 +77,7 @@
         <input type="text" id="ipRange" placeholder="Range IP (es: 192.168.1.0/24)" value="192.168.1.0/24">
         <input type="text" id="ports" placeholder="Porte (es: 80,443,22)" value="80,443,22">
         <button onclick="startScan()">▶ Avvia Scansione</button>
+        <button onclick="scanPhysicalDevices()" style="background: #ff6600;">🔍 Scan Dispositivi Fisici (Tutte le subnet)</button>
         <button onclick="scanWifi()">📶 Scan WiFi</button>
     </div>
     
@@ -115,19 +116,46 @@
             let html = `<h3>✅ Trovati ${devices.length} dispositivi</h3>`;
             
             devices.forEach(device => {
+                const statusIcon = device.reachable === false ? '⚠️' : 
+                                   device.status === 'Online' ? '✅' : '🖥️';
+                const deviceTypeInfo = device.device_type ? `<div>Tipo: ${device.device_type}</div>` : '';
+                const sourceInfo = device.source ? `<div>Rilevato via: ${device.source}</div>` : '';
+                const reachableInfo = device.reachable === false ? 
+                    '<div style="color: #ff6600;">⚠️ IP non raggiungibile (subnet diversa?)</div>' : '';
+                
                 html += `
                     <div class="device">
-                        <div class="device-ip">🖥️ ${device.ip}</div>
-                        <div>Hostname: ${device.hostname || 'N/A'}</div>
+                        <div class="device-ip">${statusIcon} ${device.ip || 'N/A'}</div>
                         <div>MAC: ${device.mac || 'N/A'}</div>
                         <div>Vendor: ${device.vendor || 'N/A'}</div>
-                        <div>Porte: ${device.open_ports.join(', ') || 'Nessuna'}</div>
+                        <div>Hostname: ${device.hostname || 'N/A'}</div>
+                        ${deviceTypeInfo}
+                        ${sourceInfo}
+                        ${reachableInfo}
+                        <div>Porte: ${device.open_ports && device.open_ports.length > 0 ? device.open_ports.join(', ') : 'Nessuna'}</div>
                         <div>Status: ${device.status}</div>
                     </div>
                 `;
             });
             
             resultsDiv.innerHTML = html;
+        }
+        
+        async function scanPhysicalDevices() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">🔍 Scansione Layer 2 in corso...<br>Rilevamento di TUTTI i dispositivi fisici anche su subnet diverse...</div>';
+            
+            try {
+                const response = await fetch('/api/scan/physical', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                const data = await response.json();
+                displayResults(data.devices);
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="device">❌ Errore: ${error.message}</div>`;
+            }
         }
         
         async function scanWifi() {

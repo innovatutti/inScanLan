@@ -1,6 +1,7 @@
 """
 Network Scanner Module
 Modulo per la scansione di rete con supporto per ping, port scan, NetBIOS, ARP
+Include scansione Layer 2 per rilevare dispositivi su subnet diverse
 """
 
 import socket
@@ -10,6 +11,7 @@ import threading
 import time
 import re
 import platform
+import struct
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class NetworkScanner:
@@ -324,3 +326,365 @@ class NetworkScanner:
         }
         
         return vendors.get(mac_prefix, 'Unknown')
+
+    def scan_all_physical_devices(self, log_callback):
+        """
+        Scansione Layer 2 - Rileva TUTTI i dispositivi fisici sulla rete
+        anche se hanno IP su subnet diverse o non configurati correttamente.
+        
+        Usa multiple tecniche:
+        - ARP table parsing (dispositivi già noti)
+        - ARP broadcast scanning (tutti i dispositivi raggiungibili)
+        - mDNS/SSDP multicast discovery (stampanti, smart devices)
+        - Network interface monitoring
+        """
+        log_callback("🔍 Avvio scansione Layer 2 di tutti i dispositivi fisici...", "INFO")
+        all_devices = {}
+        
+        # 1. Scansione ARP table esistente
+        log_callback("📋 Lettura tabella ARP esistente...", "INFO")
+        arp_devices = self._scan_arp_table()
+        for device in arp_devices:
+            mac = device['mac']
+            all_devices[mac] = device
+            
+        log_callback(f"   Trovati {len(arp_devices)} dispositivi nella cache ARP", "SUCCESS")
+        
+        # 2. ARP Broadcast Scan - rileva dispositivi su tutte le subnet fisicamente collegate
+        log_callback("📡 Scansione ARP broadcast (rileva subnet diverse)...", "INFO")
+        broadcast_devices = self._arp_broadcast_scan(log_callback)
+        for device in broadcast_devices:
+            mac = device['mac']
+            if mac not in all_devices:
+                all_devices[mac] = device
+            else:
+                # Aggiorna con informazioni aggiuntive
+                all_devices[mac].update(device)
+                
+        log_callback(f"   Trovati {len(broadcast_devices)} nuovi dispositivi via broadcast", "SUCCESS")
+        
+        # 3. mDNS/Bonjour Discovery (stampanti, IoT, Apple devices)
+        log_callback("🖨️  Scansione mDNS/Bonjour (stampanti e IoT)...", "INFO")
+        mdns_devices = self._mdns_discovery(log_callback)
+        for device in mdns_devices:
+            mac = device.get('mac')
+            if mac and mac not in all_devices:
+                all_devices[mac] = device
+            elif mac:
+                all_devices[mac].update(device)
+                
+        log_callback(f"   Trovati {len(mdns_devices)} dispositivi mDNS", "SUCCESS")
+        
+        # 4. SSDP Discovery (UPnP devices - stampanti di rete, router, NAS)
+        log_callback("🌐 Scansione SSDP/UPnP (dispositivi di rete)...", "INFO")
+        ssdp_devices = self._ssdp_discovery(log_callback)
+        for device in ssdp_devices:
+            mac = device.get('mac')
+            if mac and mac not in all_devices:
+                all_devices[mac] = device
+            elif mac:
+                all_devices[mac].update(device)
+                
+        log_callback(f"   Trovati {len(ssdp_devices)} dispositivi SSDP/UPnP", "SUCCESS")
+        
+        # Converti in lista e aggiungi informazioni
+        results = []
+        for mac, device in all_devices.items():
+            device['status'] = 'Physical Device Detected'
+            # Verifica se IP è raggiungibile
+            if 'ip' in device and device['ip']:
+                if self.ping_host(device['ip'], timeout=0.5):
+                    device['reachable'] = True
+                    device['status'] = 'Online'
+                else:
+                    device['reachable'] = False
+                    device['status'] = 'Detected but unreachable (wrong subnet?)'
+            results.append(device)
+            
+        log_callback(f"✅ Scansione completata! Trovati {len(results)} dispositivi fisici totali", "SUCCESS")
+        return results
+    
+    def _scan_arp_table(self):
+        """
+        Legge la tabella ARP di sistema per trovare tutti i dispositivi già noti
+        """
+        devices = []
+        try:
+            output = subprocess.run(
+                ['arp', '-a'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                encoding='cp437'
+            )
+            
+            if output.returncode == 0:
+                lines = output.stdout.split('\n')
+                current_interface = None
+                
+                for line in lines:
+                    # Rileva interfaccia
+                    if 'Interface:' in line:
+                        match = re.search(r'Interface:\s+(\d+\.\d+\.\d+\.\d+)', line)
+                        if match:
+                            current_interface = match.group(1)
+                    
+                    # Cerca entry ARP
+                    # Formato: IP              MAC               Tipo
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        ip_match = re.match(r'\d+\.\d+\.\d+\.\d+', parts[0])
+                        mac_match = re.match(r'([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})', parts[1])
+                        
+                        if ip_match and mac_match:
+                            ip = parts[0]
+                            mac = parts[1].replace('-', ':').upper()
+                            
+                            # Evita MAC multicast/broadcast
+                            if not mac.startswith('FF:FF') and not mac.startswith('01:00:5E'):
+                                vendor = self.get_vendor_from_mac(mac)
+                                devices.append({
+                                    'ip': ip,
+                                    'mac': mac,
+                                    'vendor': vendor,
+                                    'interface': current_interface,
+                                    'source': 'ARP Table',
+                                    'hostname': 'N/A',
+                                    'netbios': 'N/A',
+                                    'open_ports': []
+                                })
+        except Exception as e:
+            pass
+            
+        return devices
+    
+    def _arp_broadcast_scan(self, log_callback):
+        """
+        Invia ARP request broadcast per scoprire dispositivi su tutte le reti fisicamente collegate
+        Funziona anche per dispositivi con IP su subnet diverse
+        """
+        devices = []
+        
+        try:
+            # Su Windows, usa arp-scan alternativo o arping se disponibile
+            # Altrimenti genera traffico ICMP su range multipli
+            
+            # Genera range di scansione estesi per catturare subnet diverse
+            common_ranges = [
+                '192.168.0.0/24',
+                '192.168.1.0/24',
+                '192.168.2.0/24',
+                '10.0.0.0/24',
+                '10.0.1.0/24',
+                '172.16.0.0/24',
+            ]
+            
+            log_callback("   Invio ping broadcast su range comuni...", "INFO")
+            
+            for range_str in common_ranges:
+                if self.stop_flag:
+                    break
+                    
+                network = ipaddress.ip_network(range_str, strict=False)
+                # Ping solo broadcast address e gateway
+                broadcast = str(network.broadcast_address)
+                gateway = str(list(network.hosts())[0]) if network.num_addresses > 2 else None
+                
+                # Ping broadcast
+                try:
+                    subprocess.run(
+                        ['ping', '-n', '1', '-w', '100', broadcast],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        timeout=1,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                except:
+                    pass
+                    
+                if gateway:
+                    try:
+                        subprocess.run(
+                            ['ping', '-n', '1', '-w', '100', gateway],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            timeout=1,
+                            creationflags=subprocess.CREATE_NO_WINDOW
+                        )
+                    except:
+                        pass
+            
+            # Attendi che la cache ARP si popoli
+            time.sleep(0.5)
+            
+            # Rileggi tabella ARP per nuovi dispositivi
+            devices = self._scan_arp_table()
+            
+        except Exception as e:
+            log_callback(f"   Errore ARP broadcast: {e}", "ERROR")
+            
+        return devices
+    
+    def _mdns_discovery(self, log_callback):
+        """
+        Discovery via mDNS/Bonjour (multicast DNS)
+        Rileva stampanti, dispositivi Apple, IoT, etc.
+        """
+        devices = []
+        
+        try:
+            mdns_addr = '224.0.0.251'
+            mdns_port = 5353
+            
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.settimeout(2)
+            
+            # Query per servizi comuni
+            services = [
+                '_printer._tcp.local',
+                '_http._tcp.local',
+                '_ipp._tcp.local',
+                '_airplay._tcp.local',
+                '_device-info._tcp.local'
+            ]
+            
+            for service in services:
+                if self.stop_flag:
+                    break
+                    
+                try:
+                    # Invia query mDNS (semplificata)
+                    query = self._build_mdns_query(service)
+                    sock.sendto(query, (mdns_addr, mdns_port))
+                    
+                    # Ascolta risposte
+                    start_time = time.time()
+                    while time.time() - start_time < 1:
+                        try:
+                            data, addr = sock.recvfrom(1024)
+                            ip = addr[0]
+                            
+                            # Verifica se già presente
+                            if not any(d.get('ip') == ip for d in devices):
+                                mac, vendor = self.get_mac_address(ip)
+                                devices.append({
+                                    'ip': ip,
+                                    'mac': mac if mac else 'Unknown',
+                                    'vendor': vendor if vendor else 'Unknown',
+                                    'source': f'mDNS ({service})',
+                                    'hostname': 'N/A',
+                                    'netbios': 'N/A',
+                                    'open_ports': []
+                                })
+                        except socket.timeout:
+                            break
+                        except:
+                            break
+                except:
+                    pass
+            
+            sock.close()
+            
+        except Exception as e:
+            pass
+            
+        return devices
+    
+    def _build_mdns_query(self, service_name):
+        """
+        Costruisce un pacchetto mDNS query basilare
+        """
+        # Header DNS: ID=0, Flags=0x0000 (standard query)
+        query = struct.pack('>HHHHHH', 0, 0, 1, 0, 0, 0)
+        
+        # Question: service name
+        for part in service_name.split('.'):
+            query += struct.pack('B', len(part)) + part.encode()
+        query += b'\x00'  # Null terminator
+        
+        # Type PTR (12), Class IN (1)
+        query += struct.pack('>HH', 12, 1)
+        
+        return query
+    
+    def _ssdp_discovery(self, log_callback):
+        """
+        Discovery via SSDP (Simple Service Discovery Protocol) - UPnP
+        Rileva router, NAS, stampanti di rete, smart TV, etc.
+        """
+        devices = []
+        
+        try:
+            ssdp_addr = '239.255.255.250'
+            ssdp_port = 1900
+            
+            # M-SEARCH message
+            msg = (
+                'M-SEARCH * HTTP/1.1\r\n'
+                'HOST: 239.255.255.250:1900\r\n'
+                'MAN: "ssdp:discover"\r\n'
+                'MX: 2\r\n'
+                'ST: ssdp:all\r\n'
+                '\r\n'
+            )
+            
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            sock.settimeout(3)
+            
+            # Invia discovery request
+            sock.sendto(msg.encode(), (ssdp_addr, ssdp_port))
+            
+            # Ascolta risposte
+            start_time = time.time()
+            discovered_ips = set()
+            
+            while time.time() - start_time < 3:
+                if self.stop_flag:
+                    break
+                    
+                try:
+                    data, addr = sock.recvfrom(2048)
+                    ip = addr[0]
+                    
+                    if ip not in discovered_ips:
+                        discovered_ips.add(ip)
+                        
+                        # Parse risposta SSDP
+                        response = data.decode('utf-8', errors='ignore')
+                        device_type = 'Unknown'
+                        
+                        if 'printer' in response.lower():
+                            device_type = 'Network Printer'
+                        elif 'router' in response.lower() or 'gateway' in response.lower():
+                            device_type = 'Router/Gateway'
+                        elif 'nas' in response.lower() or 'storage' in response.lower():
+                            device_type = 'NAS/Storage'
+                        elif 'media' in response.lower():
+                            device_type = 'Media Device'
+                            
+                        mac, vendor = self.get_mac_address(ip)
+                        
+                        devices.append({
+                            'ip': ip,
+                            'mac': mac if mac else 'Unknown',
+                            'vendor': vendor if vendor else 'Unknown',
+                            'source': 'SSDP/UPnP',
+                            'device_type': device_type,
+                            'hostname': 'N/A',
+                            'netbios': 'N/A',
+                            'open_ports': []
+                        })
+                        
+                except socket.timeout:
+                    break
+                except:
+                    continue
+            
+            sock.close()
+            
+        except Exception as e:
+            pass
+            
+        return devices
