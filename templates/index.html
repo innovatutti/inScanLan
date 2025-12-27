@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>inScanLan Mobile</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 10px;
+        }
+        h1 { 
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #00aa00 0%, #00ff00 100%);
+            color: white;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            background: #2b2b2b;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        input, button {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        input {
+            background: #333;
+            color: #00ff00;
+        }
+        button {
+            background: #00aa00;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:active { background: #008800; }
+        #results {
+            background: #2b2b2b;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .device {
+            background: #333;
+            padding: 10px;
+            margin: 10px 0;
+            border-left: 4px solid #00ff00;
+            border-radius: 4px;
+        }
+        .device-ip {
+            font-size: 18px;
+            font-weight: bold;
+            color: #00aaff;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 inScanLan Mobile</h1>
+    
+    <div class="input-group">
+        <input type="text" id="ipRange" placeholder="Range IP (es: 192.168.1.0/24)" value="192.168.1.0/24">
+        <input type="text" id="ports" placeholder="Porte (es: 80,443,22)" value="80,443,22">
+        <button onclick="startScan()">▶ Avvia Scansione</button>
+        <button onclick="scanWifi()">📶 Scan WiFi</button>
+    </div>
+    
+    <div id="results"></div>
+    
+    <script>
+        async function startScan() {
+            const ipRange = document.getElementById('ipRange').value;
+            const ports = document.getElementById('ports').value.split(',').map(p => parseInt(p.trim()));
+            const resultsDiv = document.getElementById('results');
+            
+            resultsDiv.innerHTML = '<div class="loading">🔄 Scansione in corso...</div>';
+            
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip_range: ipRange, ports: ports })
+                });
+                
+                const data = await response.json();
+                displayResults(data.devices);
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="device">❌ Errore: ${error.message}</div>`;
+            }
+        }
+        
+        function displayResults(devices) {
+            const resultsDiv = document.getElementById('results');
+            
+            if (!devices || devices.length === 0) {
+                resultsDiv.innerHTML = '<div class="device">Nessun dispositivo trovato</div>';
+                return;
+            }
+            
+            let html = `<h3>✅ Trovati ${devices.length} dispositivi</h3>`;
+            
+            devices.forEach(device => {
+                html += `
+                    <div class="device">
+                        <div class="device-ip">🖥️ ${device.ip}</div>
+                        <div>Hostname: ${device.hostname || 'N/A'}</div>
+                        <div>MAC: ${device.mac || 'N/A'}</div>
+                        <div>Vendor: ${device.vendor || 'N/A'}</div>
+                        <div>Porte: ${device.open_ports.join(', ') || 'Nessuna'}</div>
+                        <div>Status: ${device.status}</div>
+                    </div>
+                `;
+            });
+            
+            resultsDiv.innerHTML = html;
+        }
+        
+        async function scanWifi() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">📶 Scansione WiFi...</div>';
+            
+            try {
+                const response = await fetch('/api/wifi/scan');
+                const data = await response.json();
+                
+                if (data.error) {
+                    resultsDiv.innerHTML = `<div class="device">⚠️ ${data.error}</div>`;
+                } else {
+                    // Display WiFi networks
+                    let html = '<h3>📶 Reti WiFi Trovate</h3>';
+                    data.networks.forEach(net => {
+                        html += `
+                            <div class="device">
+                                <div class="device-ip">📡 ${net.ssid}</div>
+                                <div>Segnale: ${net.signal} dBm</div>
+                                <div>Frequenza: ${net.frequency} MHz</div>
+                            </div>
+                        `;
+                    });
+                    resultsDiv.innerHTML = html;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="device">❌ Errore WiFi: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>

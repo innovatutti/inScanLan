@@ -10,6 +10,9 @@ pyinstaller>=5.0
 # Per la conversione del logo JPG in ICO:
 pillow>=9.0
 
+# Per l'esportazione PDF professionale:
+reportlab>=3.6.0
+
 # Opzionali (per funzionalità avanzate):
 # scapy>=2.5.0  # Per scansione avanzata di rete (richiede Npcap su Windows)
 # python-nmap>=0.7.1  # Per integrazione con Nmap (richiede Nmap installato)
