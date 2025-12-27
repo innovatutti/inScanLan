@@ -110,10 +110,10 @@ android.minapi = 21
 #android.sdk = 20
 
 # (str) Android NDK version to use
-#android.ndk = 23b
+android.ndk = 25b
 
 # (int) Android NDK API to use. This is the minimum API your app will support, it should usually match android.minapi.
-#android.ndk_api = 21
+android.ndk_api = 21
 
 # (bool) Use --private data storage (True) or --dir public storage (False)
 #android.private_storage = True
@@ -126,6 +126,9 @@ android.minapi = 21
 
 # (str) ANT directory (if empty, it will be automatically downloaded.)
 #android.ant_path =
+
+# (bool) Use Gradle (recommended)
+android.gradle = True
 
 # (bool) If True, then skip trying to update the Android sdk
 # This can be useful to avoid excess Internet downloads or save time

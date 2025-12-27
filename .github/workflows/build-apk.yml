@@ -24,26 +24,28 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          git zip unzip openjdk-17-jdk \
+          git zip unzip openjdk-17-jdk wget \
           autoconf libtool pkg-config \
           zlib1g-dev libncurses5-dev libncursesw5-dev \
-          cmake libffi-dev libssl-dev
+          cmake libffi-dev libssl-dev \
+          build-essential ccache \
+          libltdl-dev libffi-dev libssl-dev python3-dev
     
-    - name: Install Buildozer
+    - name: Install Buildozer and dependencies
       run: |
-        pip install --upgrade pip
+        pip install --upgrade pip setuptools wheel
         pip install buildozer cython==0.29.33
+        pip install --upgrade certifi
     
-    - name: Check current directory
+    - name: Accept Android SDK licenses
       run: |
-        pwd
-        ls -la
-        echo "Checking for buildozer.spec:"
-        ls -la buildozer.spec || echo "buildozer.spec not found!"
+        yes | sdkmanager --licenses || true
     
     - name: Build APK with Buildozer
       run: |
         buildozer android debug
+      env:
+        JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
     
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
