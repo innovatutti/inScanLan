@@ -34,6 +34,13 @@ jobs:
         pip install --upgrade pip
         pip install buildozer cython==0.29.33
     
+    - name: Check current directory
+      run: |
+        pwd
+        ls -la
+        echo "Checking for buildozer.spec:"
+        ls -la buildozer.spec || echo "buildozer.spec not found!"
+    
     - name: Build APK with Buildozer
       run: |
         buildozer android debug
