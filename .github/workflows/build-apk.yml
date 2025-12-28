@@ -1,13 +1,8 @@
 name: Build Android APK
 
 on:
-  # Disabilitato auto-trigger per problemi di rete su GitHub Actions
-  # Usa solo workflow_dispatch per build manuali
-  # push:
-  #   branches: [ main, master ]
-  # pull_request:
-  #   branches: [ main, master ]
-  workflow_dispatch:  # Avvio manuale quando necessario
+  # Manual trigger only - automatic builds disabled due to long build times
+  workflow_dispatch:
 
 jobs:
   build:
@@ -17,13 +12,25 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Cache Buildozer dependencies
+      uses: actions/cache@v4
+      with:
+        path: .buildozer
+        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          ${{ runner.os }}-buildozer-
+    
     - name: Build APK with Buildozer in Docker
       run: |
         docker run --rm \
           -v ${{ github.workspace }}:/app \
+          -v ${{ github.workspace }}/.buildozer:/root/.buildozer \
           -w /app \
           kivy/buildozer:latest \
-          buildozer android debug
+          bash -c "buildozer android debug"
     
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
