@@ -25,6 +25,7 @@ jobs:
     
     - name: Build APK with Buildozer in Docker
       run: |
+        # Note: /root/.buildozer is the default cache path in kivy/buildozer Docker image
         docker run --rm \
           -v ${{ github.workspace }}:/app \
           -v ${{ github.workspace }}/.buildozer:/root/.buildozer \

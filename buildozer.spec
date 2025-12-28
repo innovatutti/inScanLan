@@ -112,7 +112,8 @@ android.minapi = 21
 #android.sdk = 20
 
 # (str) Android NDK version to use
-# Using 25c instead of 25b due to download link issues
+# Using 25c instead of 25b to avoid broken download links (common issue in 2024-2025)
+# Verified compatible with Android API 34
 android.ndk = 25c
 
 # (int) Android NDK API to use. This is the minimum API your app will support, it should usually match android.minapi.

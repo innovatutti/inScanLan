@@ -61,7 +61,7 @@ L'APK sarà disponibile in: `Releases` > `v1.0` > Assets
 ## Miglioramenti recenti
 
 - **Android API 34**: Aggiornato per compatibilità con le ultime versioni di Android
-- **NDK 25c**: Utilizzata versione più stabile del NDK
+- **NDK 25c**: Utilizzato per evitare problemi di download con NDK 25b (link non funzionanti)
 - **Cache intelligente**: Le dipendenze buildozer vengono salvate tra le build
 - **Licenze automatiche**: SDK license viene accettato automaticamente
 
