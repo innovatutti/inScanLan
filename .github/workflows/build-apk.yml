@@ -22,7 +22,6 @@ jobs:
         docker run --rm \
           -v ${{ github.workspace }}:/app \
           -w /app \
-          -u $(id -u):$(id -g) \
           kivy/buildozer:latest \
           buildozer android debug
     
