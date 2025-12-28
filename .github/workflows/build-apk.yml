@@ -22,6 +22,7 @@ jobs:
         docker run --rm \
           -v ${{ github.workspace }}:/app \
           -w /app \
+          -e BUILDOZER_WARN_ON_ROOT=0 \
           kivy/buildozer:latest \
           buildozer android debug
     
