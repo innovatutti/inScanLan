@@ -101,7 +101,9 @@ android.permissions = android.permission.INTERNET,android.permission.ACCESS_NETW
 #android.features = android.hardware.usb.host
 
 # (int) Target Android API, should be as high as possible.
-android.api = 33
+# Updated to API 34 (Android 14) for compatibility with current tooling
+# API 35 requires newer buildozer versions not yet stable
+android.api = 34
 
 # (int) Minimum API your APK / AAB will support.
 android.minapi = 21
@@ -110,7 +112,9 @@ android.minapi = 21
 #android.sdk = 20
 
 # (str) Android NDK version to use
-android.ndk = 25b
+# Using 25c instead of 25b to avoid broken download links (common issue in 2024-2025)
+# Verified compatible with Android API 34
+android.ndk = 25c
 
 # (int) Android NDK API to use. This is the minimum API your app will support, it should usually match android.minapi.
 android.ndk_api = 21
@@ -139,7 +143,7 @@ android.gradle = True
 # agreements. This is intended for automation only. If set to False,
 # the default, you will be shown the license when first running
 # buildozer.
-# android.accept_sdk_license = False
+android.accept_sdk_license = True
 
 # (str) Android entry point, default is ok for Kivy-based app
 #android.entrypoint = org.kivy.android.PythonActivity

@@ -100,9 +100,9 @@ permissions = INTERNET,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,CHANGE_WIFI_STATE
 orientation = portrait
 fullscreen = 0
 
-android.api = 31
+android.api = 34
 android.minapi = 21
-android.ndk = 23b
+android.ndk = 25c
 android.accept_sdk_license = True
 ```
 

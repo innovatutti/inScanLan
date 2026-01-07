@@ -49,3 +49,8 @@ Thumbs.db
 results/
 scans/
 exports/
+
+# Buildozer
+.buildozer/
+bin/
+
